@@ -1,0 +1,1801 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AMM PancakeV2 BSC多签操作面板（新增Owner&Operator函数）</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+    <style>
+        .log-item {
+            transition: all 0.3s ease;
+        }
+        .btn-disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        .address-tag {
+            background-color: #f0f9ff;
+            color: #0284c7;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .loading {
+            cursor: wait;
+            position: relative;
+        }
+        .loading::after {
+            content: "";
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            border: 2px solid #fff;
+            border-top: 2px solid transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: translateY(-50%) rotate(0deg); }
+            100% { transform: translateY(-50%) rotate(360deg); }
+        }
+        .network-switch-btn {
+            background-color: #10b981;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        .permission-tag {
+            background-color: #ffebee;
+            color: #c62828;
+            padding: 1px 4px;
+            border-radius: 2px;
+            font-size: 10px;
+            font-weight: bold;
+            margin-left: 4px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 md:p-8">
+    <div class="max-w-5xl mx-auto bg-white rounded-xl shadow-md p-6 md:p-8">
+        <h1 class="text-2xl md:text-3xl font-bold text-gray-800 mb-8 text-center">
+            <span class="text-blue-600">BSC网络</span> AutoMarketMaker_PancakeV2 多签操作面板
+        </h1>
+
+        <!-- 1. 钱包&网络状态区域（新增Owner标识） -->
+        <div class="mb-8 p-4 border border-gray-200 rounded-lg bg-gray-50">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">📡 钱包与网络状态</h2>
+            <div class="flex flex-col md:flex-row items-center gap-4 flex-wrap">
+                <p id="wallet-status" class="text-gray-600">钱包状态：未连接</p>
+                <p id="network-status" class="text-gray-600">
+                    网络状态：未检测
+                    <span id="network-switch-btn" class="network-switch-btn hidden ml-2">一键切换BSC主网</span>
+                </p>
+                <p id="current-account" class="text-gray-600 hidden">
+                    当前账户：<span class="address-tag"></span>
+                    <span id="is-owner-tag" class="permission-tag hidden">OWNER</span>
+                </p>
+                <button id="connect-wallet" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                    连接MetaMask
+                </button>
+            </div>
+        </div>
+
+        <!-- 2. 合约配置区域（原有逻辑不变） -->
+        <div class="mb-8 p-4 border border-gray-200 rounded-lg bg-gray-50">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">📝 AMM合约配置（快速选择）</h2>
+            <div class="flex flex-col gap-4">
+                <div>
+                    <label for="amm-contract-select" class="block text-gray-600 mb-2">选择预设AMM合约</label>
+                    <select id="amm-contract-select" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">-- 请选择AMM合约 --</option>
+                        <option value="0x96C8C31101984628746e1dc2D788E74Be6b9b6A2">AMM合约1：0x96C8C31101984628746e1dc2D788E74Be6b9b6A2</option>
+                        <option value="0x635d5DD1587EC504b6900Ec294969C6FbB9bADB9">AMM合约2：0x635d5DD1587EC504b6900Ec294969C6FbB9bADB9</option>
+                        <option value="0x52D39Ae5c1745C85085D38C49Ee767B0a48817c8">AMM合约3：0x52D39Ae5c1745C85085D38C49Ee767B0a48817c8</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="contract-address" class="block text-gray-600 mb-2">AMM合约地址（BSC网络）</label>
+                    <input 
+                        type="text" 
+                        id="contract-address" 
+                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="请输入AutoMarketMaker_PancakeV2合约地址（0x...）"
+                    >
+                </div>
+                <button id="init-contract" class="bg-gray-700 text-white px-6 py-2 rounded-lg hover:bg-gray-800 transition-colors w-full md:w-auto self-start">
+                    初始化合约
+                </button>
+            </div>
+        </div>
+
+        <!-- 3. 多签信息查询区域（原有逻辑不变，新增Owner查询） -->
+        <div class="mb-8 p-4 border border-gray-200 rounded-lg bg-gray-50">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">🔍 多签信息查询</h2>
+            <button id="query-multisig-info" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors mb-4" disabled>
+                查询多签信息
+            </button>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <p class="text-gray-600 mb-1">当前确认数：</p>
+                    <p id="confirm-count" class="font-mono text-xl text-gray-800">--</p>
+                </div>
+                <div>
+                    <p class="text-gray-600 mb-1">是否已授权修改：</p>
+                    <p id="is-authorized" class="font-mono text-xl text-gray-800">--</p>
+                </div>
+                <div>
+                    <p class="text-gray-600 mb-1">当前账户是否为多签：</p>
+                    <p id="is-multisigner" class="font-mono text-xl text-gray-800">--</p>
+                </div>
+                <div>
+                    <p class="text-gray-600 mb-1">所需最小确认数：</p>
+                    <p id="required-confirms" class="font-mono text-xl text-gray-800">3</p>
+                </div>
+                <div class="md:col-span-2">
+                    <p class="text-gray-600 mb-1">合约Owner地址：</p>
+                    <p id="contract-owner" class="font-mono text-xl text-gray-800">--</p>
+                </div>
+            </div>
+
+            <div class="mb-2">
+                <p class="text-gray-600 mb-2">多签地址列表：</p>
+                <div id="multisig-list" class="max-h-40 overflow-y-auto p-2 border border-gray-300 rounded-lg bg-white">
+                    <p class="text-gray-500 text-center">未查询到多签列表</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. 核心操作区域（原有逻辑不变） -->
+        <div class="mb-8 p-4 border border-gray-200 rounded-lg bg-gray-50">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">⚡ 多签核心操作</h2>
+            <div class="flex flex-col md:flex-row gap-4">
+                <button id="confirm-modify" class="bg-purple-600 text-white px-6 py-2 rounded-lg hover:bg-purple-700 transition-colors disabled:btn-disabled" disabled>
+                    确认修改授权（confirmModify）
+                </button>
+                <button id="reset-authorization" class="bg-orange-600 text-white px-6 py-2 rounded-lg hover:bg-orange-700 transition-colors disabled:btn-disabled" disabled>
+                    重置授权状态（resetModifyAuthorization）
+                </button>
+            </div>
+        </div>
+
+        <!-- 5. 新增：Owner专属操作区域 -->
+        <div class="mb-8 p-4 border border-red-200 rounded-lg bg-red-50">
+            <h2 class="text-xl font-semibold text-red-700 mb-4">🔐 Owner专属操作（仅合约管理员可用）</h2>
+            <p id="owner-tip" class="text-red-600 mb-4 text-sm">⚠️  当前账户非合约Owner，所有操作按钮不可用</p>
+
+            <!-- 5.1 setConfigAddress 操作 -->
+            <div class="mb-6 p-3 border border-red-100 rounded-lg bg-white">
+                <h3 class="text-lg font-medium text-red-700 mb-3">设置配置地址（setConfigAddress）</h3>
+                <div class="flex flex-col gap-3">
+                    <div>
+                        <label for="config-type" class="block text-gray-600 mb-1">地址类型</label>
+                        <select id="config-type" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500">
+                            <option value="farm">farm</option>
+                            <option value="oneclick">oneclick</option>
+                            <option value="release">release</option>
+                            <option value="lprewardburn">lprewardburn</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="new-config-address" class="block text-gray-600 mb-1">新地址</label>
+                        <input type="text" id="new-config-address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="0x...">
+                    </div>
+                    <button id="set-config-address" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors disabled:btn-disabled" disabled>
+                        提交设置
+                    </button>
+                </div>
+            </div>
+
+            <!-- 5.2 updateTradingParams 操作 -->
+            <div class="mb-6 p-3 border border-red-100 rounded-lg bg-white">
+                <h3 class="text-lg font-medium text-red-700 mb-3">更新交易参数（updateTradingParams）</h3>
+                <div class="flex flex-col gap-3">
+                    <div>
+                        <label for="swap-slippage" class="block text-gray-600 mb-1">滑点比例（万分之几，最大10000）</label>
+                        <input type="number" id="swap-slippage" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="10000" min="0" max="10000">
+                    </div>
+                    <div>
+                        <label for="deadline-gap" class="block text-gray-600 mb-1">截止时间偏移（秒，最大86400）</label>
+                        <input type="number" id="deadline-gap" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="300" min="0" max="86400">
+                    </div>
+                    <button id="update-trading-params" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors disabled:btn-disabled" disabled>
+                        提交更新
+                    </button>
+                </div>
+            </div>
+
+            <!-- 5.3 addOperator 操作 -->
+            <div class="mb-6 p-3 border border-red-100 rounded-lg bg-white">
+                <h3 class="text-lg font-medium text-red-700 mb-3">添加Operator（addOperator）</h3>
+                <div class="flex flex-col gap-3">
+                    <div>
+                        <label for="operator-address" class="block text-gray-600 mb-1">Operator地址</label>
+                        <input type="text" id="operator-address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="0x...">
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label for="max-swap-amount" class="block text-gray-600 mb-1">最大Swap金额</label>
+                            <input type="text" id="max-swap-amount" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="1000000000000000000">
+                        </div>
+                        <div>
+                            <label for="max-add-liq-token" class="block text-gray-600 mb-1">最大添加流动性Token金额</label>
+                            <input type="text" id="max-add-liq-token" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="1000000000000000000">
+                        </div>
+                        <div>
+                            <label for="max-add-liq-usdt" class="block text-gray-600 mb-1">最大添加流动性USDT金额</label>
+                            <input type="text" id="max-add-liq-usdt" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="1000000000000000000">
+                        </div>
+                        <div>
+                            <label for="max-remove-liq" class="block text-gray-600 mb-1">最大移除流动性金额</label>
+                            <input type="text" id="max-remove-liq" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="1000000000000000000">
+                        </div>
+                    </div>
+                    <button id="add-operator" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors disabled:btn-disabled" disabled>
+                        添加Operator
+                    </button>
+                </div>
+            </div>
+
+            <!-- 5.4 removeOperator 操作 -->
+            <div class="mb-6 p-3 border border-red-100 rounded-lg bg-white">
+                <h3 class="text-lg font-medium text-red-700 mb-3">移除Operator（removeOperator）</h3>
+                <div class="flex flex-col gap-3">
+                    <div>
+                        <label for="remove-operator-address" class="block text-gray-600 mb-1">Operator地址</label>
+                        <input type="text" id="remove-operator-address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="0x...">
+                    </div>
+                    <button id="remove-operator" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors disabled:btn-disabled" disabled>
+                        移除Operator
+                    </button>
+                </div>
+            </div>
+
+            <!-- 5.5 setOperatorLimits 操作 -->
+            <div class="mb-6 p-3 border border-red-100 rounded-lg bg-white">
+                <h3 class="text-lg font-medium text-red-700 mb-3">设置Operator限额（setOperatorLimits）</h3>
+                <div class="flex flex-col gap-3">
+                    <div>
+                        <label for="set-limits-operator-address" class="block text-gray-600 mb-1">Operator地址</label>
+                        <input type="text" id="set-limits-operator-address" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="0x...">
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label for="new-max-swap" class="block text-gray-600 mb-1">新最大Swap金额</label>
+                            <input type="text" id="new-max-swap" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="1000000000000000000">
+                        </div>
+                        <div>
+                            <label for="new-max-add-liq-token" class="block text-gray-600 mb-1">新最大添加流动性Token金额</label>
+                            <input type="text" id="new-max-add-liq-token" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="1000000000000000000">
+                        </div>
+                        <div>
+                            <label for="new-max-add-liq-usdt" class="block text-gray-600 mb-1">新最大添加流动性USDT金额</label>
+                            <input type="text" id="new-max-add-liq-usdt" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="1000000000000000000">
+                        </div>
+                        <div>
+                            <label for="new-max-remove-liq" class="block text-gray-600 mb-1">新最大移除流动性金额</label>
+                            <input type="text" id="new-max-remove-liq" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="1000000000000000000">
+                        </div>
+                    </div>
+                    <div>
+                        <label for="operator-is-active" class="block text-gray-600 mb-1">是否激活</label>
+                        <select id="operator-is-active" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500">
+                            <option value="true">是</option>
+                            <option value="false">否</option>
+                        </select>
+                    </div>
+                    <button id="set-operator-limits" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors disabled:btn-disabled" disabled>
+                        设置Operator限额
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 6. 新增：Operator专属操作区域 -->
+        <div class="mb-8 p-4 border border-blue-200 rounded-lg bg-blue-50">
+            <h2 class="text-xl font-semibold text-blue-700 mb-4">🛠️ Operator专属操作（仅活跃Operator可用）</h2>
+            <p id="operator-tip" class="text-blue-600 mb-4 text-sm">⚠️  当前账户非活跃Operator，所有操作按钮不可用</p>
+
+            <!-- 6.1 autoSwap 操作 -->
+            <div class="mb-6 p-3 border border-blue-100 rounded-lg bg-white">
+                <h3 class="text-lg font-medium text-blue-700 mb-3">自动兑换（autoSwap）</h3>
+                <div class="flex flex-col gap-3">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label for="from-token" class="block text-gray-600 mb-1">转出代币地址</label>
+                            <input type="text" id="from-token" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0x...">
+                        </div>
+                        <div>
+                            <label for="to-token" class="block text-gray-600 mb-1">转入代币地址</label>
+                            <input type="text" id="to-token" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0x...">
+                        </div>
+                        <div>
+                            <label for="swap-amount-in" class="block text-gray-600 mb-1">转出金额</label>
+                            <input type="text" id="swap-amount-in" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="1000000000000000000">
+                        </div>
+                        <div>
+                            <label for="swap-amount-out-min" class="block text-gray-600 mb-1">最小转入金额（留空自动计算）</label>
+                            <input type="text" id="swap-amount-out-min" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0">
+                        </div>
+                    </div>
+                    <button id="auto-swap" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:btn-disabled" disabled>
+                        执行兑换
+                    </button>
+                </div>
+            </div>
+
+            <!-- 6.2 autoAddLiquidity 操作 -->
+            <div class="mb-6 p-3 border border-blue-100 rounded-lg bg-white">
+                <h3 class="text-lg font-medium text-blue-700 mb-3">自动添加流动性（autoAddLiquidity）</h3>
+                <div class="flex flex-col gap-3">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label for="liq-token-amount" class="block text-gray-600 mb-1">Token期望金额</label>
+                            <input type="text" id="liq-token-amount" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="1000000000000000000">
+                        </div>
+                        <div>
+                            <label for="liq-usdt-amount" class="block text-gray-600 mb-1">USDT期望金额</label>
+                            <input type="text" id="liq-usdt-amount" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="1000000000000000000">
+                        </div>
+                        <div>
+                            <label for="liq-token-min" class="block text-gray-600 mb-1">Token最小金额（留空自动计算）</label>
+                            <input type="text" id="liq-token-min" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0">
+                        </div>
+                        <div>
+                            <label for="liq-usdt-min" class="block text-gray-600 mb-1">USDT最小金额（留空自动计算）</label>
+                            <input type="text" id="liq-usdt-min" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0">
+                        </div>
+                    </div>
+                    <button id="auto-add-liquidity" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:btn-disabled" disabled>
+                        添加流动性
+                    </button>
+                </div>
+            </div>
+
+            <!-- 6.3 autoRemoveLiquidity 操作 -->
+            <div class="mb-6 p-3 border border-blue-100 rounded-lg bg-white">
+                <h3 class="text-lg font-medium text-blue-700 mb-3">自动移除流动性（autoRemoveLiquidity）</h3>
+                <div class="flex flex-col gap-3">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label for="remove-liq-amount" class="block text-gray-600 mb-1">LP代币金额</label>
+                            <input type="text" id="remove-liq-amount" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="1000000000000000000">
+                        </div>
+                        <div>
+                            <label for="remove-token-min" class="block text-gray-600 mb-1">Token最小金额（留空填1）</label>
+                            <input type="text" id="remove-token-min" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="1">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label for="remove-usdt-min" class="block text-gray-600 mb-1">USDT最小金额（留空填1）</label>
+                            <input type="text" id="remove-usdt-min" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="1">
+                        </div>
+                    </div>
+                    <button id="auto-remove-liquidity" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:btn-disabled" disabled>
+                        移除流动性
+                    </button>
+                </div>
+            </div>
+
+            <!-- 6.4 transferFunds 操作（新增余额展示） -->
+            <div class="mb-6 p-3 border border-blue-100 rounded-lg bg-white">
+                <h3 class="text-lg font-medium text-blue-700 mb-3">转账资金（transferFunds）</h3>
+                <div class="flex flex-col gap-3">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                            <label for="transfer-token" class="block text-gray-600 mb-1">代币地址</label>
+                            <input type="text" id="transfer-token" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0x...">
+                            <!-- 新增：合约代币余额展示 -->
+                            <p id="contract-token-balance" class="mt-1 text-sm">
+                                <span class="text-gray-500">合约该代币余额：</span>
+                                <span class="text-blue-600 font-mono" id="balance-display">--</span>
+                                <span id="balance-loading" class="text-gray-400 text-xs hidden">（查询中...）</span>
+                                <span id="balance-error" class="text-red-500 text-xs hidden">（地址无效/查询失败）</span>
+                            </p>
+                        </div>
+                        <div>
+                            <label for="transfer-recipient" class="block text-gray-600 mb-1">接收地址（仅预设地址）</label>
+                            <input type="text" id="transfer-recipient" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="0x...">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label for="transfer-amount" class="block text-gray-600 mb-1">转账金额</label>
+                            <input type="text" id="transfer-amount" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="1000000000000000000">
+                        </div>
+                    </div>
+                    <button id="transfer-funds" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:btn-disabled" disabled>
+                        执行转账
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7. 操作日志区域（原有逻辑不变） -->
+        <div class="mb-4 p-4 border border-gray-200 rounded-lg bg-gray-50">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">📜 操作日志</h2>
+            <div id="operation-logs" class="max-h-60 overflow-y-auto p-2 border border-gray-300 rounded-lg bg-white">
+                <p class="text-gray-500 text-center">暂无操作记录</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let web3 = null;
+        let accounts = [];
+        let ammContract = null;
+        let currentIsOwner = false; // 新增：当前账户是否为Owner
+        let currentIsActiveOperator = false; // 新增：当前账户是否为活跃Operator
+        // BSC网络配置（主网）
+        const BSC_MAINNET = {
+            chainId: '0x38', // 56 十进制
+            chainName: 'Binance Smart Chain Mainnet',
+            nativeCurrency: {
+                name: 'BNB',
+                symbol: 'BNB',
+                decimals: 18
+            },
+            rpcUrls: ['https://bsc-dataseed1.binance.org/'],
+            blockExplorerUrls: ['https://bscscan.com/']
+        };
+        const BSC_TESTNET_CHAIN_ID = '0x38'; // 56 十进制
+        const REQUIRED_CONFIRMS = 3;
+        const MULTI_SIGNER_NUM = 5;
+
+        // 完整ABI（新增所有函数定义，与合约一致）
+        const AMM_ABI = [
+            // 原有只读函数
+            {
+                "inputs": [],
+                "name": "getAllMultiSigners",
+                "outputs": [{"internalType": "address[]", "name": "", "type": "address[]"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "modifyConfirmCount",
+                "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "isModifyAuthorized",
+                "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{"internalType": "address", "name": "", "type": "address"}],
+                "name": "isMultiSigner",
+                "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "REQUIRED_CONFIRMS",
+                "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{"internalType": "address", "name": "", "type": "address"}],
+                "name": "modifyConfirmed",
+                "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            // 原有写函数
+            {
+                "inputs": [],
+                "name": "confirmModify",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "resetModifyAuthorization",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            // 新增：只读函数（Owner/Operator查询）
+            {
+                "inputs": [],
+                "name": "owner",
+                "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{"internalType": "address", "name": "", "type": "address"}],
+                "name": "isOperator",
+                "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{"internalType": "address", "name": "", "type": "address"}],
+                "name": "operatorLimits",
+                "outputs": [
+                    {"internalType": "uint256", "name": "maxSwapAmount", "type": "uint256"},
+                    {"internalType": "uint256", "name": "maxAddLiquidityTokenAmount", "type": "uint256"},
+                    {"internalType": "uint256", "name": "maxAddLiquidityUsdtAmount", "type": "uint256"},
+                    {"internalType": "uint256", "name": "maxRemoveLiquidityAmount", "type": "uint256"},
+                    {"internalType": "bool", "name": "isActive", "type": "bool"}
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "swapSlippage",
+                "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "deadlineGap",
+                "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "token",
+                "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "usdt",
+                "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "lpToken",
+                "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            // 新增：Owner专属写函数
+            {
+                "inputs": [
+                    {"internalType": "string", "name": "_typeName", "type": "string"},
+                    {"internalType": "address", "name": "_newAddress", "type": "address"}
+                ],
+                "name": "setConfigAddress",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {"internalType": "uint256", "name": "_swapSlippage", "type": "uint256"},
+                    {"internalType": "uint256", "name": "_deadlineGap", "type": "uint256"}
+                ],
+                "name": "updateTradingParams",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {"internalType": "address", "name": "_operator", "type": "address"},
+                    {"internalType": "uint256", "name": "_maxSwapAmount", "type": "uint256"},
+                    {"internalType": "uint256", "name": "_maxAddLiquidityTokenAmount", "type": "uint256"},
+                    {"internalType": "uint256", "name": "_maxAddLiquidityUsdtAmount", "type": "uint256"},
+                    {"internalType": "uint256", "name": "_maxRemoveLiquidityAmount", "type": "uint256"}
+                ],
+                "name": "addOperator",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [{"internalType": "address", "name": "_operator", "type": "address"}],
+                "name": "removeOperator",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {"internalType": "address", "name": "_operator", "type": "address"},
+                    {"internalType": "uint256", "name": "_maxSwapAmount", "type": "uint256"},
+                    {"internalType": "uint256", "name": "_maxAddLiquidityTokenAmount", "type": "uint256"},
+                    {"internalType": "uint256", "name": "_maxAddLiquidityUsdtAmount", "type": "uint256"},
+                    {"internalType": "uint256", "name": "_maxRemoveLiquidityAmount", "type": "uint256"},
+                    {"internalType": "bool", "name": "_isActive", "type": "bool"}
+                ],
+                "name": "setOperatorLimits",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            // 新增：Operator专属写函数
+            {
+                "inputs": [
+                    {"internalType": "address", "name": "_fromToken", "type": "address"},
+                    {"internalType": "address", "name": "_toToken", "type": "address"},
+                    {"internalType": "uint256", "name": "_amountIn", "type": "uint256"},
+                    {"internalType": "uint256", "name": "_minAmountOut", "type": "uint256"}
+                ],
+                "name": "autoSwap",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {"internalType": "uint256", "name": "_tokenAmountDesired", "type": "uint256"},
+                    {"internalType": "uint256", "name": "_usdtAmountDesired", "type": "uint256"},
+                    {"internalType": "uint256", "name": "_minTokenAmount", "type": "uint256"},
+                    {"internalType": "uint256", "name": "_minUsdtAmount", "type": "uint256"}
+                ],
+                "name": "autoAddLiquidity",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {"internalType": "uint256", "name": "_liquidity", "type": "uint256"},
+                    {"internalType": "uint256", "name": "_minTokenAmount", "type": "uint256"},
+                    {"internalType": "uint256", "name": "_minUsdtAmount", "type": "uint256"}
+                ],
+                "name": "autoRemoveLiquidity",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [
+                    {"internalType": "address", "name": "_token", "type": "address"},
+                    {"internalType": "address", "name": "_recipient", "type": "address"},
+                    {"internalType": "uint256", "name": "_amount", "type": "uint256"}
+                ],
+                "name": "transferFunds",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            }
+        ];
+
+        // 工具函数：添加操作日志（原有逻辑不变）
+        function addLog(content, isSuccess = true) {
+            const logContainer = document.getElementById('operation-logs');
+            const emptyTip = logContainer.querySelector('.text-gray-500.text-center');
+            if (emptyTip) {
+                emptyTip.remove();
+            }
+
+            const logItem = document.createElement('div');
+            logItem.className = `log-item p-2 border-b border-gray-200 ${isSuccess ? 'text-green-700' : 'text-red-700'}`;
+            logItem.innerHTML = `<span class="font-mono text-sm">${new Date().toLocaleString()}</span>：${content}`;
+            
+            logContainer.prepend(logItem);
+            console.log(`${isSuccess ? '[成功]' : '[失败]'} ${new Date().toLocaleString()}：${content}`);
+        }
+
+        // 工具函数：格式化地址（原有逻辑不变）
+        function formatAddress(address) {
+            if (!address || address.length !== 42) return address;
+            return `${address.slice(0, 6)}...${address.slice(-4)}`;
+        }
+
+        // 工具函数：简化BSC网络检测（原有逻辑不变）
+        async function checkBSCNetwork() {
+            if (!web3) {
+                addLog('未初始化Web3，无法检测网络', false);
+                return false;
+            }
+            try {
+                const chainId = await web3.eth.getChainId();
+                const switchBtn = document.getElementById('network-switch-btn');
+
+                if (chainId === 56) {
+                    document.getElementById('network-status').textContent = '网络状态：BSC主网（已适配）';
+                    document.getElementById('network-status').className = 'text-green-600';
+                    if (switchBtn) switchBtn.classList.add('hidden');
+                    return true;
+                } else {
+                    document.getElementById('network-status').innerHTML = `
+                        网络状态：非BSC主网（当前ChainId：${chainId}）
+                        <span id="network-switch-btn" class="network-switch-btn ml-2">一键切换BSC主网</span>
+                    `;
+                    document.getElementById('network-status').className = 'text-red-600';
+                    const switchBtnDom = document.getElementById('network-switch-btn');
+                    if (switchBtnDom) {
+                        switchBtnDom.removeEventListener('click', switchToBSCMainnet);
+                        switchBtnDom.addEventListener('click', switchToBSCMainnet);
+                    }
+                    addLog(`当前网络非BSC主网（ChainId：${chainId}），可点击「一键切换BSC主网」`, false);
+                    return false;
+                }
+            } catch (error) {
+                addLog(`检测网络失败：${error.message}`, false);
+                console.error('网络检测错误：', error);
+                return false;
+            }
+        }
+
+        // 函数：一键切换到BSC主网（原有逻辑不变）
+        async function switchToBSCMainnet() {
+            try {
+                if (!window.ethereum) {
+                    throw new Error('未检测到MetaMask钱包');
+                }
+                addLog('正在请求切换到BSC主网，请在钱包中确认');
+                await window.ethereum.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: BSC_MAINNET.chainId }],
+                });
+                addLog('成功切换到BSC主网');
+                setTimeout(async () => {
+                    await checkBSCNetwork();
+                }, 1000);
+            } catch (switchError) {
+                if (switchError.code === 4902) {
+                    try {
+                        addLog('BSC主网未添加到钱包，正在请求添加');
+                        await window.ethereum.request({
+                            method: 'wallet_addEthereumChain',
+                            params: [BSC_MAINNET],
+                        });
+                        addLog('成功添加并切换到BSC主网');
+                        setTimeout(async () => {
+                            await checkBSCNetwork();
+                        }, 1000);
+                    } catch (addError) {
+                        addLog(`添加BSC主网失败：${addError.message}`, false);
+                    }
+                } else {
+                    addLog(`切换BSC主网失败：${switchError.message}`, false);
+                }
+            }
+        }
+
+        // 新增工具函数：更新权限状态（Owner/Operator）
+        async function updatePermissionStatus() {
+            if (!web3 || !ammContract || !accounts.length) {
+                currentIsOwner = false;
+                currentIsActiveOperator = false;
+                updatePermissionUI();
+                return;
+            }
+
+            const currentAccount = accounts[0].toLowerCase();
+            try {
+                // 1. 查询Owner并判断
+                const contractOwner = (await ammContract.methods.owner().call()).toLowerCase();
+                currentIsOwner = (currentAccount === contractOwner);
+
+                // 2. 查询Operator状态并判断
+                const isOperator = await ammContract.methods.isOperator(currentAccount).call();
+                let isActive = false;
+                if (isOperator) {
+                    const operatorLimits = await ammContract.methods.operatorLimits(currentAccount).call();
+                    isActive = operatorLimits.isActive;
+                }
+                currentIsActiveOperator = isOperator && isActive;
+
+                // 3. 更新合约Owner显示
+                document.getElementById('contract-owner').textContent = formatAddress(contractOwner);
+                document.getElementById('contract-owner').title = contractOwner;
+
+                addLog(`权限校验完成：当前账户${currentIsOwner ? '是' : '不是'}Owner，${currentIsActiveOperator ? '是' : '不是'}活跃Operator`, true);
+            } catch (error) {
+                addLog(`权限校验失败：${error.message}`, false);
+                currentIsOwner = false;
+                currentIsActiveOperator = false;
+            } finally {
+                updatePermissionUI();
+            }
+        }
+
+        // 新增工具函数：更新权限相关UI
+        function updatePermissionUI() {
+            // 1. Owner相关UI
+            const isOwnerTag = document.getElementById('is-owner-tag');
+            const ownerTip = document.getElementById('owner-tip');
+            const ownerButtons = [
+                document.getElementById('set-config-address'),
+                document.getElementById('update-trading-params'),
+                document.getElementById('add-operator'),
+                document.getElementById('remove-operator'),
+                document.getElementById('set-operator-limits')
+            ];
+
+            if (currentIsOwner) {
+                isOwnerTag.classList.remove('hidden');
+                ownerTip.innerHTML = '✅ 当前账户是合约Owner，可执行以下操作（需先完成3个多签授权）';
+                ownerTip.className = 'text-green-600 mb-4 text-sm';
+                ownerButtons.forEach(btn => {
+                    if (ammContract) {
+                        btn.removeAttribute('disabled');
+                    } else {
+                        btn.setAttribute('disabled', true);
+                    }
+                });
+            } else {
+                isOwnerTag.classList.add('hidden');
+                ownerTip.innerHTML = '⚠️ 当前账户非合约Owner，所有操作按钮不可用';
+                ownerTip.className = 'text-red-600 mb-4 text-sm';
+                ownerButtons.forEach(btn => btn.setAttribute('disabled', true));
+            }
+
+            // 2. Operator相关UI
+            const operatorTip = document.getElementById('operator-tip');
+            const operatorButtons = [
+                document.getElementById('auto-swap'),
+                document.getElementById('auto-add-liquidity'),
+                document.getElementById('auto-remove-liquidity'),
+                document.getElementById('transfer-funds')
+            ];
+
+            if (currentIsActiveOperator) {
+                operatorTip.innerHTML = '✅ 当前账户是活跃Operator，可执行以下操作';
+                operatorTip.className = 'text-green-600 mb-4 text-sm';
+                operatorButtons.forEach(btn => {
+                    if (ammContract) {
+                        btn.removeAttribute('disabled');
+                    } else {
+                        btn.setAttribute('disabled', true);
+                    }
+                });
+            } else {
+                operatorTip.innerHTML = '⚠️ 当前账户非活跃Operator，所有操作按钮不可用';
+                operatorTip.className = 'text-blue-600 mb-4 text-sm';
+                operatorButtons.forEach(btn => btn.setAttribute('disabled', true));
+            }
+        }
+
+        // 新增工具函数：获取代币小数位数（处理BNB和ERC20代币）
+        async function getTokenDecimals(tokenAddress) {
+            if (!web3 || !web3.utils.isAddress(tokenAddress)) {
+                return 18; // 默认返回18位，异常情况兜底
+            }
+            // 原生BNB（零地址）
+            if (tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000000000') {
+                return 18;
+            }
+            // ERC20代币查询decimals
+            try {
+                const erc20Abi = [{
+                    "inputs": [],
+                    "name": "decimals",
+                    "outputs": [{"internalType": "uint8", "name": "", "type": "uint8"}],
+                    "stateMutability": "view",
+                    "type": "function"
+                }];
+                const erc20Contract = new web3.eth.Contract(erc20Abi, tokenAddress);
+                const decimals = await erc20Contract.methods.decimals().call();
+                return decimals;
+            } catch (error) {
+                console.warn(`获取代币${tokenAddress}小数位数失败，默认使用18位：`, error);
+                return 18;
+            }
+        }
+
+        // 核心函数：查询合约对应代币余额并显示
+        async function queryContractTokenBalance() {
+            // 获取DOM元素
+            const tokenInput = document.getElementById('transfer-token');
+            const balanceDisplay = document.getElementById('balance-display');
+            const balanceLoading = document.getElementById('balance-loading');
+            const balanceError = document.getElementById('balance-error');
+            const tokenAddress = tokenInput.value.trim();
+
+            // 重置显示状态
+            balanceDisplay.textContent = '--';
+            balanceLoading.classList.remove('hidden');
+            balanceError.classList.add('hidden');
+
+            // 前置校验
+            if (!web3) {
+                balanceDisplay.textContent = '--';
+                balanceLoading.classList.add('hidden');
+                balanceError.textContent = '（请先连接钱包）';
+                balanceError.classList.remove('hidden');
+                return;
+            }
+            if (!ammContract) {
+                balanceDisplay.textContent = '--';
+                balanceLoading.classList.add('hidden');
+                balanceError.textContent = '（请先初始化合约）';
+                balanceError.classList.remove('hidden');
+                return;
+            }
+            if (!tokenAddress || !web3.utils.isAddress(tokenAddress)) {
+                balanceDisplay.textContent = '--';
+                balanceLoading.classList.add('hidden');
+                if (tokenAddress) { // 输入非空但无效地址
+                    balanceError.textContent = '（无效的代币地址）';
+                    balanceError.classList.remove('hidden');
+                } else { // 输入为空
+                    balanceError.classList.add('hidden');
+                }
+                return;
+            }
+
+            try {
+                let contractBalanceRaw; // 原始余额（最小单位）
+                const contractAddr = ammContract.options.address;
+                const decimals = await getTokenDecimals(tokenAddress);
+
+                // 区分原生BNB和ERC20代币
+                if (tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000000000') {
+                    // 查询合约BNB余额
+                    contractBalanceRaw = await web3.eth.getBalance(contractAddr);
+                } else {
+                    // 查询ERC20代币合约余额
+                    const erc20Abi = [{
+                        "inputs": [{"internalType": "address", "name": "account", "type": "address"}],
+                        "name": "balanceOf",
+                        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+                        "stateMutability": "view",
+                        "type": "function"
+                    }];
+                    const erc20Contract = new web3.eth.Contract(erc20Abi, tokenAddress);
+                    contractBalanceRaw = await erc20Contract.methods.balanceOf(contractAddr).call();
+                }
+
+                // 格式化余额（转换为人类可读格式，如1 BNB = 10^18 wei）
+                const formattedBalance = web3.utils.fromWei(contractBalanceRaw, decimals === 18 ? 'ether' : 'wei');
+                // 保留6位小数，避免过长
+                const displayBalance = Number(formattedBalance).toFixed(6);
+
+                // 更新显示
+                balanceDisplay.textContent = `${displayBalance}（原始：${contractBalanceRaw}）`;
+                balanceLoading.classList.add('hidden');
+                balanceError.classList.add('hidden');
+            } catch (error) {
+                console.error(`查询合约代币余额失败：`, error);
+                balanceDisplay.textContent = '--';
+                balanceLoading.classList.add('hidden');
+                balanceError.textContent = `（查询失败：${error.message.slice(0, 20)}...）`;
+                balanceError.classList.remove('hidden');
+            }
+        }
+
+        // ===== DOM加载完成后绑定事件 =====
+        document.addEventListener('DOMContentLoaded', async function() {
+            addLog('页面DOM加载完成，开始初始化事件绑定');
+
+            // 1. 下拉框选择同步到输入框（原有逻辑不变）
+            document.getElementById('amm-contract-select').addEventListener('change', function() {
+                const selectedAddress = this.value;
+                document.getElementById('contract-address').value = selectedAddress;
+                if (selectedAddress) {
+                    addLog(`已选择预设AMM合约：${formatAddress(selectedAddress)}（完整地址：${selectedAddress}）`);
+                }
+            });
+
+            // 2. 钱包连接逻辑（新增权限更新）
+            document.getElementById('connect-wallet').addEventListener('click', async () => {
+                try {
+                    if (typeof window.ethereum === 'undefined') {
+                        throw new Error('未检测到MetaMask钱包，请先安装并启用');
+                    }
+                    let tempWeb3 = new Web3(window.ethereum);
+                    let tempAccounts;
+                    try {
+                        tempAccounts = await tempWeb3.eth.getAccounts();
+                    } catch (e) {
+                        throw new Error('钱包已锁定，请先解锁MetaMask');
+                    }
+                    if (tempAccounts.length === 0) {
+                        tempAccounts = await window.ethereum.request({
+                            method: 'eth_requestAccounts',
+                            params: []
+                        });
+                    }
+
+                    web3 = tempWeb3;
+                    accounts = tempAccounts;
+                    const currentAccount = accounts[0];
+
+                    document.getElementById('wallet-status').textContent = '钱包状态：已连接';
+                    document.getElementById('wallet-status').className = 'text-green-600';
+                    document.getElementById('current-account').classList.remove('hidden');
+                    document.getElementById('current-account').querySelector('.address-tag').textContent = formatAddress(currentAccount);
+                    document.getElementById('current-account').querySelector('.address-tag').title = currentAccount;
+                    document.getElementById('connect-wallet').textContent = '重新连接钱包';
+
+                    await checkBSCNetwork();
+                    // 新增：更新权限状态
+                    if (ammContract) {
+                        await updatePermissionStatus();
+                    }
+                    addLog(`钱包连接成功，当前账户：${formatAddress(currentAccount)}（完整地址：${currentAccount}）`);
+                } catch (error) {
+                    addLog(`钱包连接失败：${error.message}`, false);
+                    console.error('钱包连接错误：', error);
+                }
+            });
+
+            // 3. 监听钱包账户切换（新增权限更新）
+            if (window.ethereum) {
+                window.ethereum.on('accountsChanged', async (newAccounts) => {
+                    accounts = newAccounts;
+                    if (newAccounts.length === 0) {
+                        document.getElementById('wallet-status').textContent = '钱包状态：已断开';
+                        document.getElementById('wallet-status').className = 'text-gray-600';
+                        document.getElementById('current-account').classList.add('hidden');
+                        currentIsOwner = false;
+                        currentIsActiveOperator = false;
+                        updatePermissionUI();
+                        addLog('钱包账户已移除，连接断开', false);
+                        return;
+                    }
+                    const currentAccount = newAccounts[0];
+                    document.getElementById('current-account').querySelector('.address-tag').textContent = formatAddress(currentAccount);
+                    document.getElementById('current-account').querySelector('.address-tag').title = currentAccount;
+                    addLog(`钱包账户已切换：${formatAddress(currentAccount)}（完整地址：${currentAccount}）`);
+                    await checkBSCNetwork();
+                    // 新增：更新权限状态
+                    if (ammContract) {
+                        await updatePermissionStatus();
+                    }
+                });
+
+                // 4. 监听网络切换（原有逻辑不变）
+                window.ethereum.on('chainChanged', async (newChainId) => {
+                    addLog(`网络已切换，新ChainId：${web3.utils.hexToNumber(newChainId)}`);
+                    await checkBSCNetwork();
+                });
+            }
+
+            // 5. 初始化合约逻辑（新增权限更新）
+            document.getElementById('init-contract').addEventListener('click', async () => {
+                try {
+                    if (!web3) {
+                        throw new Error('请先连接钱包');
+                    }
+                    const isBSC = await checkBSCNetwork();
+                    if (!isBSC) {
+                        throw new Error('当前非BSC网络，无法初始化合约');
+                    }
+                    const contractAddress = document.getElementById('contract-address').value.trim();
+                    if (!contractAddress || !web3.utils.isAddress(contractAddress)) {
+                        throw new Error('请输入有效的合约地址（或从下拉框选择预设地址）');
+                    }
+
+                    ammContract = new web3.eth.Contract(AMM_ABI, contractAddress);
+                    addLog(`合约初始化成功：${formatAddress(contractAddress)}（BSC网络）`);
+                    document.getElementById('query-multisig-info').removeAttribute('disabled');
+                    // 新增：更新权限状态
+                    await updatePermissionStatus();
+                } catch (error) {
+                    addLog(`合约初始化失败：${error.message}`, false);
+                    console.error('合约初始化错误：', error);
+                }
+            });
+
+            // 6. 查询多签信息逻辑（新增Owner查询和权限更新）
+            document.getElementById('query-multisig-info').addEventListener('click', async function() {
+                const btn = this;
+                btn.classList.add('loading');
+                btn.setAttribute('disabled', true);
+
+                try {
+                    // 强校验所有前置条件
+                    if (!web3) {
+                        throw new Error('Web3未初始化，请先连接钱包');
+                    }
+                    if (!ammContract) {
+                        throw new Error('合约未初始化，请先点击「初始化合约」');
+                    }
+                    if (!accounts || accounts.length === 0) {
+                        throw new Error('未获取到账户，请重新连接钱包');
+                    }
+                    const isBSC = await checkBSCNetwork();
+                    if (!isBSC) {
+                        throw new Error('当前非BSC主网，无法查询多签信息');
+                    }
+                    const currentAccount = accounts[0];
+                    addLog(`开始查询多签信息，当前账户：${formatAddress(currentAccount)}`);
+
+                    // 分步调用合约函数，单独捕获错误
+                    let multiSigners = [];
+                    let confirmCount = 0;
+                    let isAuthorized = false;
+                    let isMultisigner = false;
+
+                    // 查询多签地址列表
+                    try {
+                        multiSigners = await ammContract.methods.getAllMultiSigners().call();
+                        addLog(`多签地址列表查询成功，共${multiSigners.length}个多签地址`, true);
+                    } catch (err) {
+                        throw new Error(`查询多签地址列表失败：${err.message}`);
+                    }
+
+                    // 查询当前确认数
+                    try {
+                        confirmCount = await ammContract.methods.modifyConfirmCount().call();
+                        addLog(`当前确认数查询成功：${confirmCount}`, true);
+                    } catch (err) {
+                        throw new Error(`查询当前确认数失败：${err.message}`);
+                    }
+
+                    // 查询是否已授权修改
+                    try {
+                        isAuthorized = await ammContract.methods.isModifyAuthorized().call();
+                        addLog(`是否已授权修改查询成功：${isAuthorized ? '是' : '否'}`, true);
+                    } catch (err) {
+                        throw new Error(`查询是否已授权修改失败：${err.message}`);
+                    }
+
+                    // 查询当前账户是否为多签
+                    try {
+                        isMultisigner = await ammContract.methods.isMultiSigner(currentAccount).call();
+                        addLog(`当前账户多签身份查询成功：${isMultisigner ? '是多签账户' : '非多签账户'}`, true);
+                    } catch (err) {
+                        throw new Error(`查询当前账户多签身份失败：${err.message}`);
+                    }
+
+                    // 更新页面DOM
+                    document.getElementById('confirm-count').textContent = confirmCount;
+                    document.getElementById('is-authorized').textContent = isAuthorized ? '✅ 是' : '❌ 否';
+                    document.getElementById('is-multisigner').textContent = isMultisigner ? '✅ 是' : '❌ 否';
+
+                    // 更新多签地址列表
+                    const multisigListContainer = document.getElementById('multisig-list');
+                    multisigListContainer.innerHTML = '';
+                    if (multiSigners.length === 0) {
+                        multisigListContainer.innerHTML = '<p class="text-gray-500 text-center">未查询到多签地址</p>';
+                    } else {
+                        multiSigners.forEach((addr, index) => {
+                            const addrItem = document.createElement('div');
+                            addrItem.className = 'p-1 border-b border-gray-100 flex justify-between items-center';
+                            addrItem.innerHTML = `
+                                <span>${index + 1}. <span class="address-tag">${formatAddress(addr)}</span></span>
+                                <span class="font-mono text-xs text-gray-500">${addr}</span>
+                            `;
+                            multisigListContainer.appendChild(addrItem);
+                        });
+                    }
+
+                    // 启用操作按钮（仅当为多签账户时）
+                    const confirmBtn = document.getElementById('confirm-modify');
+                    const resetBtn = document.getElementById('reset-authorization');
+                    if (isMultisigner) {
+                        confirmBtn.removeAttribute('disabled');
+                        resetBtn.removeAttribute('disabled');
+                    } else {
+                        confirmBtn.setAttribute('disabled', true);
+                        resetBtn.setAttribute('disabled', true);
+                    }
+
+                    // 新增：更新权限状态（Owner/Operator）
+                    await updatePermissionStatus();
+
+                    addLog('多签信息查询成功！', true);
+                } catch (error) {
+                    let errorMsg = error.message;
+                    addLog(`多签信息查询失败：${errorMsg}`, false);
+                    console.error('多签查询错误：', error);                    } finally {
+                        btn.classList.remove('loading');
+                        btn.removeAttribute('disabled');
+                    }
+                });
+
+                // 7. 确认修改授权（confirmModify）操作
+                document.getElementById('confirm-modify').addEventListener('click', async function() {
+                    const btn = this;
+                    btn.classList.add('loading');
+                    btn.setAttribute('disabled', true);
+
+                    try {
+                        if (!web3 || !ammContract || !accounts.length) {
+                            throw new Error('请先连接钱包并初始化合约');
+                        }
+                        const currentAccount = accounts[0];
+                        const isBSC = await checkBSCNetwork();
+                        if (!isBSC) {
+                            throw new Error('当前非BSC主网，无法执行操作');
+                        }
+
+                        addLog(`开始执行「确认修改授权」操作，当前账户：${formatAddress(currentAccount)}`);
+                        // 调用合约方法
+                        const tx = await ammContract.methods.confirmModify().send({
+                            from: currentAccount
+                        });
+
+                        addLog(`确认修改授权操作成功！交易哈希：<span class="address-tag">${tx.transactionHash}</span>`, true);
+                        // 重新查询多签信息
+                        setTimeout(async () => {
+                            await document.getElementById('query-multisig-info').click();
+                        }, 2000);
+                    } catch (error) {
+                        addLog(`确认修改授权操作失败：${error.message}`, false);
+                        console.error('confirmModify错误：', error);
+                    } finally {
+                        btn.classList.remove('loading');
+                        btn.removeAttribute('disabled');
+                    }
+                });
+
+                // 8. 重置授权状态（resetModifyAuthorization）操作
+                document.getElementById('reset-authorization').addEventListener('click', async function() {
+                    const btn = this;
+                    btn.classList.add('loading');
+                    btn.setAttribute('disabled', true);
+
+                    try {
+                        if (!web3 || !ammContract || !accounts.length) {
+                            throw new Error('请先连接钱包并初始化合约');
+                        }
+                        const currentAccount = accounts[0];
+                        const isBSC = await checkBSCNetwork();
+                        if (!isBSC) {
+                            throw new Error('当前非BSC主网，无法执行操作');
+                        }
+
+                        addLog(`开始执行「重置授权状态」操作，当前账户：${formatAddress(currentAccount)}`);
+                        // 调用合约方法
+                        const tx = await ammContract.methods.resetModifyAuthorization().send({
+                            from: currentAccount
+                        });
+
+                        addLog(`重置授权状态操作成功！交易哈希：<span class="address-tag">${tx.transactionHash}</span>`, true);
+                        // 重新查询多签信息
+                        setTimeout(async () => {
+                            await document.getElementById('query-multisig-info').click();
+                        }, 2000);
+                    } catch (error) {
+                        addLog(`重置授权状态操作失败：${error.message}`, false);
+                        console.error('resetModifyAuthorization错误：', error);
+                    } finally {
+                        btn.classList.remove('loading');
+                        btn.removeAttribute('disabled');
+                    }
+                });
+
+                // 9. Owner操作：设置配置地址（setConfigAddress）
+                document.getElementById('set-config-address').addEventListener('click', async function() {
+                    const btn = this;
+                    btn.classList.add('loading');
+                    btn.setAttribute('disabled', true);
+
+                    try {
+                        if (!currentIsOwner) {
+                            throw new Error('当前账户非合约Owner，无权执行该操作');
+                        }
+                        if (!web3 || !ammContract || !accounts.length) {
+                            throw new Error('请先连接钱包并初始化合约');
+                        }
+                        const currentAccount = accounts[0];
+                        const isBSC = await checkBSCNetwork();
+                        if (!isBSC) {
+                            throw new Error('当前非BSC主网，无法执行操作');
+                        }
+
+                        // 获取输入值
+                        const configType = document.getElementById('config-type').value.trim();
+                        const newConfigAddress = document.getElementById('new-config-address').value.trim();
+
+                        // 校验输入
+                        if (!configType) {
+                            throw new Error('请选择地址类型');
+                        }
+                        if (!newConfigAddress || !web3.utils.isAddress(newConfigAddress)) {
+                            throw new Error('请输入有效的新配置地址');
+                        }
+
+                        addLog(`开始执行「设置配置地址」操作：类型=${configType}，新地址=${formatAddress(newConfigAddress)}`);
+                        // 调用合约方法
+                        const tx = await ammContract.methods.setConfigAddress(configType, newConfigAddress).send({
+                            from: currentAccount
+                        });
+
+                        addLog(`设置配置地址操作成功！交易哈希：<span class="address-tag">${tx.transactionHash}</span>`, true);
+                    } catch (error) {
+                        addLog(`设置配置地址操作失败：${error.message}`, false);
+                        console.error('setConfigAddress错误：', error);
+                    } finally {
+                        btn.classList.remove('loading');
+                        btn.removeAttribute('disabled');
+                    }
+                });
+
+                // 10. Owner操作：更新交易参数（updateTradingParams）
+                document.getElementById('update-trading-params').addEventListener('click', async function() {
+                    const btn = this;
+                    btn.classList.add('loading');
+                    btn.setAttribute('disabled', true);
+
+                    try {
+                        if (!currentIsOwner) {
+                            throw new Error('当前账户非合约Owner，无权执行该操作');
+                        }
+                        if (!web3 || !ammContract || !accounts.length) {
+                            throw new Error('请先连接钱包并初始化合约');
+                        }
+                        const currentAccount = accounts[0];
+                        const isBSC = await checkBSCNetwork();
+                        if (!isBSC) {
+                            throw new Error('当前非BSC主网，无法执行操作');
+                        }
+
+                        // 获取输入值
+                        const swapSlippage = document.getElementById('swap-slippage').value.trim();
+                        const deadlineGap = document.getElementById('deadline-gap').value.trim();
+
+                        // 校验输入
+                        if (!swapSlippage || isNaN(swapSlippage) || Number(swapSlippage) < 0 || Number(swapSlippage) > 10000) {
+                            throw new Error('请输入0-10000之间的有效滑点比例');
+                        }
+                        if (!deadlineGap || isNaN(deadlineGap) || Number(deadlineGap) < 0 || Number(deadlineGap) > 86400) {
+                            throw new Error('请输入0-86400之间的有效截止时间偏移');
+                        }
+
+                        addLog(`开始执行「更新交易参数」操作：滑点=${swapSlippage}，截止偏移=${deadlineGap}秒`);
+                        // 调用合约方法
+                        const tx = await ammContract.methods.updateTradingParams(
+                            web3.utils.toBN(swapSlippage),
+                            web3.utils.toBN(deadlineGap)
+                        ).send({
+                            from: currentAccount
+                        });
+
+                        addLog(`更新交易参数操作成功！交易哈希：<span class="address-tag">${tx.transactionHash}</span>`, true);
+                    } catch (error) {
+                        addLog(`更新交易参数操作失败：${error.message}`, false);
+                        console.error('updateTradingParams错误：', error);
+                    } finally {
+                        btn.classList.remove('loading');
+                        btn.removeAttribute('disabled');
+                    }
+                });
+
+                // 11. Owner操作：添加Operator（addOperator）
+                document.getElementById('add-operator').addEventListener('click', async function() {
+                    const btn = this;
+                    btn.classList.add('loading');
+                    btn.setAttribute('disabled', true);
+
+                    try {
+                        if (!currentIsOwner) {
+                            throw new Error('当前账户非合约Owner，无权执行该操作');
+                        }
+                        if (!web3 || !ammContract || !accounts.length) {
+                            throw new Error('请先连接钱包并初始化合约');
+                        }
+                        const currentAccount = accounts[0];
+                        const isBSC = await checkBSCNetwork();
+                        if (!isBSC) {
+                            throw new Error('当前非BSC主网，无法执行操作');
+                        }
+
+                        // 获取输入值
+                        const operatorAddress = document.getElementById('operator-address').value.trim();
+                        const maxSwapAmount = document.getElementById('max-swap-amount').value.trim();
+                        const maxAddLiqToken = document.getElementById('max-add-liq-token').value.trim();
+                        const maxAddLiqUsdt = document.getElementById('max-add-liq-usdt').value.trim();
+                        const maxRemoveLiq = document.getElementById('max-remove-liq').value.trim();
+
+                        // 校验输入
+                        if (!operatorAddress || !web3.utils.isAddress(operatorAddress)) {
+                            throw new Error('请输入有效的Operator地址');
+                        }
+                        if (!maxSwapAmount || isNaN(maxSwapAmount) || Number(maxSwapAmount) < 0) {
+                            throw new Error('请输入非负的有效最大Swap金额');
+                        }
+                        if (!maxAddLiqToken || isNaN(maxAddLiqToken) || Number(maxAddLiqToken) < 0) {
+                            throw new Error('请输入非负的有效最大添加流动性Token金额');
+                        }
+                        if (!maxAddLiqUsdt || isNaN(maxAddLiqUsdt) || Number(maxAddLiqUsdt) < 0) {
+                            throw new Error('请输入非负的有效最大添加流动性USDT金额');
+                        }
+                        if (!maxRemoveLiq || isNaN(maxRemoveLiq) || Number(maxRemoveLiq) < 0) {
+                            throw new Error('请输入非负的有效最大移除流动性金额');
+                        }
+
+                        addLog(`开始执行「添加Operator」操作：地址=${formatAddress(operatorAddress)}`);
+                        // 调用合约方法
+                        const tx = await ammContract.methods.addOperator(
+                            operatorAddress,
+                            web3.utils.toBN(maxSwapAmount),
+                            web3.utils.toBN(maxAddLiqToken),
+                            web3.utils.toBN(maxAddLiqUsdt),
+                            web3.utils.toBN(maxRemoveLiq)
+                        ).send({
+                            from: currentAccount
+                        });
+
+                        addLog(`添加Operator操作成功！交易哈希：<span class="address-tag">${tx.transactionHash}</span>`, true);
+                    } catch (error) {
+                        addLog(`添加Operator操作失败：${error.message}`, false);
+                        console.error('addOperator错误：', error);
+                    } finally {
+                        btn.classList.remove('loading');
+                        btn.removeAttribute('disabled');
+                    }
+                });
+
+                // 12. Owner操作：移除Operator（removeOperator）
+                document.getElementById('remove-operator').addEventListener('click', async function() {
+                    const btn = this;
+                    btn.classList.add('loading');
+                    btn.setAttribute('disabled', true);
+
+                    try {
+                        if (!currentIsOwner) {
+                            throw new Error('当前账户非合约Owner，无权执行该操作');
+                        }
+                        if (!web3 || !ammContract || !accounts.length) {
+                            throw new Error('请先连接钱包并初始化合约');
+                        }
+                        const currentAccount = accounts[0];
+                        const isBSC = await checkBSCNetwork();
+                        if (!isBSC) {
+                            throw new Error('当前非BSC主网，无法执行操作');
+                        }
+
+                        // 获取输入值
+                        const operatorAddress = document.getElementById('remove-operator-address').value.trim();
+
+                        // 校验输入
+                        if (!operatorAddress || !web3.utils.isAddress(operatorAddress)) {
+                            throw new Error('请输入有效的Operator地址');
+                        }
+
+                        addLog(`开始执行「移除Operator」操作：地址=${formatAddress(operatorAddress)}`);
+                        // 调用合约方法
+                        const tx = await ammContract.methods.removeOperator(operatorAddress).send({
+                            from: currentAccount
+                        });
+
+                        addLog(`移除Operator操作成功！交易哈希：<span class="address-tag">${tx.transactionHash}</span>`, true);
+                    } catch (error) {
+                        addLog(`移除Operator操作失败：${error.message}`, false);
+                        console.error('removeOperator错误：', error);
+                    } finally {
+                        btn.classList.remove('loading');
+                        btn.removeAttribute('disabled');
+                    }
+                });
+
+                // 13. Owner操作：设置Operator限额（setOperatorLimits）
+                document.getElementById('set-operator-limits').addEventListener('click', async function() {
+                    const btn = this;
+                    btn.classList.add('loading');
+                    btn.setAttribute('disabled', true);
+
+                    try {
+                        if (!currentIsOwner) {
+                            throw new Error('当前账户非合约Owner，无权执行该操作');
+                        }
+                        if (!web3 || !ammContract || !accounts.length) {
+                            throw new Error('请先连接钱包并初始化合约');
+                        }
+                        const currentAccount = accounts[0];
+                        const isBSC = await checkBSCNetwork();
+                        if (!isBSC) {
+                            throw new Error('当前非BSC主网，无法执行操作');
+                        }
+
+                        // 获取输入值
+                        const operatorAddress = document.getElementById('set-limits-operator-address').value.trim();
+                        const newMaxSwap = document.getElementById('new-max-swap').value.trim();
+                        const newMaxAddLiqToken = document.getElementById('new-max-add-liq-token').value.trim();
+                        const newMaxAddLiqUsdt = document.getElementById('new-max-add-liq-usdt').value.trim();
+                        const newMaxRemoveLiq = document.getElementById('new-max-remove-liq').value.trim();
+                        const isActive = (document.getElementById('operator-is-active').value === 'true');
+
+                        // 校验输入
+                        if (!operatorAddress || !web3.utils.isAddress(operatorAddress)) {
+                            throw new Error('请输入有效的Operator地址');
+                        }
+                        if (!newMaxSwap || isNaN(newMaxSwap) || Number(newMaxSwap) < 0) {
+                            throw new Error('请输入非负的有效新最大Swap金额');
+                        }
+                        if (!newMaxAddLiqToken || isNaN(newMaxAddLiqToken) || Number(newMaxAddLiqToken) < 0) {
+                            throw new Error('请输入非负的有效新最大添加流动性Token金额');
+                        }
+                        if (!newMaxAddLiqUsdt || isNaN(newMaxAddLiqUsdt) || Number(newMaxAddLiqUsdt) < 0) {
+                            throw new Error('请输入非负的有效新最大添加流动性USDT金额');
+                        }
+                        if (!newMaxRemoveLiq || isNaN(newMaxRemoveLiq) || Number(newMaxRemoveLiq) < 0) {
+                            throw new Error('请输入非负的有效新最大移除流动性金额');
+                        }
+
+                        addLog(`开始执行「设置Operator限额」操作：地址=${formatAddress(operatorAddress)}，是否激活=${isActive}`);
+                        // 调用合约方法
+                        const tx = await ammContract.methods.setOperatorLimits(
+                            operatorAddress,
+                            web3.utils.toBN(newMaxSwap),
+                            web3.utils.toBN(newMaxAddLiqToken),
+                            web3.utils.toBN(newMaxAddLiqUsdt),
+                            web3.utils.toBN(newMaxRemoveLiq),
+                            isActive
+                        ).send({
+                            from: currentAccount
+                        });
+
+                        addLog(`设置Operator限额操作成功！交易哈希：<span class="address-tag">${tx.transactionHash}</span>`, true);
+                    } catch (error) {
+                        addLog(`设置Operator限额操作失败：${error.message}`, false);
+                        console.error('setOperatorLimits错误：', error);
+                    } finally {
+                        btn.classList.remove('loading');
+                        btn.removeAttribute('disabled');
+                    }
+                });
+
+                // 14. Operator操作：自动兑换（autoSwap）
+                document.getElementById('auto-swap').addEventListener('click', async function() {
+                    const btn = this;
+                    btn.classList.add('loading');
+                    btn.setAttribute('disabled', true);
+
+                    try {
+                        if (!currentIsActiveOperator) {
+                            throw new Error('当前账户非活跃Operator，无权执行该操作');
+                        }
+                        if (!web3 || !ammContract || !accounts.length) {
+                            throw new Error('请先连接钱包并初始化合约');
+                        }
+                        const currentAccount = accounts[0];
+                        const isBSC = await checkBSCNetwork();
+                        if (!isBSC) {
+                            throw new Error('当前非BSC主网，无法执行操作');
+                        }
+
+                        // 获取输入值
+                        const fromToken = document.getElementById('from-token').value.trim();
+                        const toToken = document.getElementById('to-token').value.trim();
+                        const swapAmountIn = document.getElementById('swap-amount-in').value.trim();
+                        let swapAmountOutMin = document.getElementById('swap-amount-out-min').value.trim();
+
+                        // 校验输入
+                        if (!fromToken || !web3.utils.isAddress(fromToken)) {
+                            throw new Error('请输入有效的转出代币地址');
+                        }
+                        if (!toToken || !web3.utils.isAddress(toToken)) {
+                            throw new Error('请输入有效的转入代币地址');
+                        }
+                        if (!swapAmountIn || isNaN(swapAmountIn) || Number(swapAmountIn) < 0) {
+                            throw new Error('请输入非负的有效转出金额');
+                        }
+                        if (!swapAmountOutMin) {
+                            swapAmountOutMin = '0';
+                        } else if (isNaN(swapAmountOutMin) || Number(swapAmountOutMin) < 0) {
+                            throw new Error('请输入非负的有效最小转入金额');
+                        }
+
+                        addLog(`开始执行「自动兑换」操作：从${formatAddress(fromToken)}到${formatAddress(toToken)}，转出金额=${swapAmountIn}`);
+                        // 调用合约方法
+                        const tx = await ammContract.methods.autoSwap(
+                            fromToken,
+                            toToken,
+                            web3.utils.toBN(swapAmountIn),
+                            web3.utils.toBN(swapAmountOutMin)
+                        ).send({
+                            from: currentAccount
+                        });
+
+                        addLog(`自动兑换操作成功！交易哈希：<span class="address-tag">${tx.transactionHash}</span>`, true);
+                    } catch (error) {
+                        addLog(`自动兑换操作失败：${error.message}`, false);
+                        console.error('autoSwap错误：', error);
+                    } finally {
+                        btn.classList.remove('loading');
+                        btn.removeAttribute('disabled');
+                    }
+                });
+
+                // 15. Operator操作：自动添加流动性（autoAddLiquidity）
+                document.getElementById('auto-add-liquidity').addEventListener('click', async function() {
+                    const btn = this;
+                    btn.classList.add('loading');
+                    btn.setAttribute('disabled', true);
+
+                    try {
+                        if (!currentIsActiveOperator) {
+                            throw new Error('当前账户非活跃Operator，无权执行该操作');
+                        }
+                        if (!web3 || !ammContract || !accounts.length) {
+                            throw new Error('请先连接钱包并初始化合约');
+                        }
+                        const currentAccount = accounts[0];
+                        const isBSC = await checkBSCNetwork();
+                        if (!isBSC) {
+                            throw new Error('当前非BSC主网，无法执行操作');
+                        }
+
+                        // 获取输入值
+                        const liqTokenAmount = document.getElementById('liq-token-amount').value.trim();
+                        const liqUsdtAmount = document.getElementById('liq-usdt-amount').value.trim();
+                        let liqTokenMin = document.getElementById('liq-token-min').value.trim();
+                        let liqUsdtMin = document.getElementById('liq-usdt-min').value.trim();
+
+                        // 校验输入
+                        if (!liqTokenAmount || isNaN(liqTokenAmount) || Number(liqTokenAmount) < 0) {
+                            throw new Error('请输入非负的有效Token期望金额');
+                        }
+                        if (!liqUsdtAmount || isNaN(liqUsdtAmount) || Number(liqUsdtAmount) < 0) {
+                            throw new Error('请输入非负的有效USDT期望金额');
+                        }
+                        if (!liqTokenMin) {
+                            liqTokenMin = '0';
+                        } else if (isNaN(liqTokenMin) || Number(liqTokenMin) < 0) {
+                            throw new Error('请输入非负的有效Token最小金额');
+                        }
+                        if (!liqUsdtMin) {
+                            liqUsdtMin = '0';
+                        } else if (isNaN(liqUsdtMin) || Number(liqUsdtMin) < 0) {
+                            throw new Error('请输入非负的有效USDT最小金额');
+                        }
+
+                        addLog(`开始执行「自动添加流动性」操作：Token金额=${liqTokenAmount}，USDT金额=${liqUsdtAmount}`);
+                        // 调用合约方法
+                        const tx = await ammContract.methods.autoAddLiquidity(
+                            web3.utils.toBN(liqTokenAmount),
+                            web3.utils.toBN(liqUsdtAmount),
+                            web3.utils.toBN(liqTokenMin),
+                            web3.utils.toBN(liqUsdtMin)
+                        ).send({
+                            from: currentAccount
+                        });
+
+                        addLog(`自动添加流动性操作成功！交易哈希：<span class="address-tag">${tx.transactionHash}</span>`, true);
+                    } catch (error) {
+                        addLog(`自动添加流动性操作失败：${error.message}`, false);
+                        console.error('autoAddLiquidity错误：', error);
+                    } finally {
+                        btn.classList.remove('loading');
+                        btn.removeAttribute('disabled');
+                    }
+                });
+
+                // 16. Operator操作：自动移除流动性（autoRemoveLiquidity）
+                document.getElementById('auto-remove-liquidity').addEventListener('click', async function() {
+                    const btn = this;
+                    btn.classList.add('loading');
+                    btn.setAttribute('disabled', true);
+
+                    try {
+                        if (!currentIsActiveOperator) {
+                            throw new Error('当前账户非活跃Operator，无权执行该操作');
+                        }
+                        if (!web3 || !ammContract || !accounts.length) {
+                            throw new Error('请先连接钱包并初始化合约');
+                        }
+                        const currentAccount = accounts[0];
+                        const isBSC = await checkBSCNetwork();
+                        if (!isBSC) {
+                            throw new Error('当前非BSC主网，无法执行操作');
+                        }
+
+                        // 获取输入值
+                        const removeLiqAmount = document.getElementById('remove-liq-amount').value.trim();
+                        let removeTokenMin = document.getElementById('remove-token-min').value.trim();
+                        let removeUsdtMin = document.getElementById('remove-usdt-min').value.trim();
+
+                        // 校验输入
+                        if (!removeLiqAmount || isNaN(removeLiqAmount) || Number(removeLiqAmount) < 0) {
+                            throw new Error('请输入非负的有效LP代币金额');
+                        }
+                        if (!removeTokenMin) {
+                            removeTokenMin = '1';
+                        } else if (isNaN(removeTokenMin) || Number(removeTokenMin) < 0) {
+                            throw new Error('请输入非负的有效Token最小金额');
+                        }
+                        if (!removeUsdtMin) {
+                            removeUsdtMin = '1';
+                        } else if (isNaN(removeUsdtMin) || Number(removeUsdtMin) < 0) {
+                            throw new Error('请输入非负的有效USDT最小金额');
+                        }
+
+                        addLog(`开始执行「自动移除流动性」操作：LP代币金额=${removeLiqAmount}`);
+                        // 调用合约方法
+                        const tx = await ammContract.methods.autoRemoveLiquidity(
+                            web3.utils.toBN(removeLiqAmount),
+                            web3.utils.toBN(removeTokenMin),
+                            web3.utils.toBN(removeUsdtMin)
+                        ).send({
+                            from: currentAccount
+                        });
+
+                        addLog(`自动移除流动性操作成功！交易哈希：<span class="address-tag">${tx.transactionHash}</span>`, true);
+                    } catch (error) {
+                        addLog(`自动移除流动性操作失败：${error.message}`, false);
+                        console.error('autoRemoveLiquidity错误：', error);
+                    } finally {
+                        btn.classList.remove('loading');
+                        btn.removeAttribute('disabled');
+                    }
+                });
+
+                // 17. Operator操作：转账资金（transferFunds）
+                document.getElementById('transfer-funds').addEventListener('click', async function() {
+                    const btn = this;
+                    btn.classList.add('loading');
+                    btn.setAttribute('disabled', true);
+
+                    try {
+                        if (!currentIsActiveOperator) {
+                            throw new Error('当前账户非活跃Operator，无权执行该操作');
+                        }
+                        if (!web3 || !ammContract || !accounts.length) {
+                            throw new Error('请先连接钱包并初始化合约');
+                        }
+                        const currentAccount = accounts[0];
+                        const isBSC = await checkBSCNetwork();
+                        if (!isBSC) {
+                            throw new Error('当前非BSC主网，无法执行操作');
+                        }
+
+                        // 获取输入值
+                        const transferToken = document.getElementById('transfer-token').value.trim();
+                        const transferRecipient = document.getElementById('transfer-recipient').value.trim();
+                        const transferAmount = document.getElementById('transfer-amount').value.trim();
+
+                        // 校验输入
+                        if (!transferToken || !web3.utils.isAddress(transferToken)) {
+                            throw new Error('请输入有效的代币地址');
+                        }
+                        if (!transferRecipient || !web3.utils.isAddress(transferRecipient)) {
+                            throw new Error('请输入有效的接收地址');
+                        }
+                        if (!transferAmount || isNaN(transferAmount) || Number(transferAmount) < 0) {
+                            throw new Error('请输入非负的有效转账金额');
+                        }
+
+                        addLog(`开始执行「转账资金」操作：代币=${formatAddress(transferToken)}，接收地址=${formatAddress(transferRecipient)}，金额=${transferAmount}`);
+                        // 调用合约方法
+                        const tx = await ammContract.methods.transferFunds(
+                            transferToken,
+                            transferRecipient,
+                            web3.utils.toBN(transferAmount)
+                        ).send({
+                            from: currentAccount
+                        });
+
+                        addLog(`转账资金操作成功！交易哈希：<span class="address-tag">${tx.transactionHash}</span>`, true);
+                        // 重新查询代币余额
+                        setTimeout(async () => {
+                            await queryContractTokenBalance();
+                        }, 2000);
+                    } catch (error) {
+                        addLog(`转账资金操作失败：${error.message}`, false);
+                        console.error('transferFunds错误：', error);
+                    } finally {
+                        btn.classList.remove('loading');
+                        btn.removeAttribute('disabled');
+                    }
+                });
+
+                // 18. 绑定代币地址输入事件，自动查询合约余额
+                document.getElementById('transfer-token').addEventListener('blur', async function() {
+                    await queryContractTokenBalance();
+                });
+                document.getElementById('transfer-token').addEventListener('input', async function() {
+                    // 输入停止后延迟查询，避免频繁请求
+                    clearTimeout(this.balanceQueryTimer);
+                    this.balanceQueryTimer = setTimeout(async () => {
+                        await queryContractTokenBalance();
+                    }, 500);
+                });
+
+                addLog('所有事件绑定完成，页面初始化就绪', true);
+            });
+        </script>
+    </body>
+</html>
